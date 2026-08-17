@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "EXAMPLE ONLY -- this file is not read by the toolkit.",
+    "The live configuration is created by the setup wizard on first run and lives at",
+    "%ProgramData%\\WimForge\\config.json. Edit it from the tool:",
+    "  console : Housekeeping > Settings",
+    "  GUI     : the Settings tab",
+    "This file is here to document the shape and the sensible values, and so the",
+    "repo never carries one machine's drive letters."
+  ],
+
+  "SetupComplete": true,
+  "WorkspaceRoot": "E:\\Imaging",
+
+  "ImageRoot": "E:\\Imaging\\Images",
+  "BaseImage": "E:\\Imaging\\Images\\LTSC2021-Base.wim",
+  "PeImage": "E:\\Imaging\\Images\\WinPE-POS.wim",
+
+  "DriverRoot": "E:\\Imaging\\Drivers",
+  "UpdateRoot": "E:\\Imaging\\Updates",
+  "PayloadRoot": "E:\\Imaging\\Payload",
+  "UnattendPath": "E:\\Imaging\\unattend.xml",
+
+  "MountPath": "C:\\WimMount",
+  "ScratchPath": "C:\\WimScratch",
+  "LogRoot": "E:\\Imaging\\Logs",
+
+  "WdsShare": "\\\\srv01\\RemoteInstall\\Images",
+  "WdsBootShare": "\\\\srv01\\RemoteInstall\\Boot\\x64\\Images",
+
+  "ImageNamePrefix": "REFERENCE",
+  "BootDriverClasses": [ "Net", "SCSIAdapter", "HDC", "System", "USB" ],
+  "DefaultIndex": 1,
+  "KeepPublishedVersions": 3,
+  "HistoryFile": "E:\\Imaging\\build-history.json"
+}

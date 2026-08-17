@@ -1,0 +1,317 @@
+# WimForge -- https://github.com/centauri/wimforge
+# Copyright (c) 2026 Paul Admiraal. Released under the MIT licence; see LICENSE.
+#
+# Cuts a release when a version tag is pushed.
+#
+# GitHub already attaches a "Source code (zip)" to every release, so this only
+# earns its place by doing what that one cannot:
+#
+#   a predictable file name        WimForge-1.0.0.zip, not a repo-and-tag string,
+#                                  so a link in a runbook keeps working
+#   a checksum                     this gets run elevated on imaging
+#                                  workstations; people should be able to check
+#                                  what they downloaded
+#   the notes for THAT version     lifted out of CHANGELOG.md rather than
+#                                  auto-generated from commit subjects
+#   a gate                         the tag has to agree with the module
+#                                  manifest, the CHANGELOG has to have an entry,
+#                                  and the whole test suite has to pass. A
+#                                  release that fails any of those is not
+#                                  published at all.
+#
+# The version gate is the one worth having. Tagging v1.1.0 while the manifest
+# still says 1.0.0 produces a download whose own module reports the wrong
+# version, and nothing about it looks wrong until somebody is trying to work out
+# which build a terminal was imaged with.
+#
+# No third-party actions. This runs elevated on other people's build machines,
+# so the release that produces it is built with the GitHub CLI that is already
+# on the runner rather than with something pulled from the marketplace.
+
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release, e.g. v1.0.0. It must already exist.'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      # --------------------------------------------------------------- version
+      - name: Work out the version, and check everything agrees on it
+        id: version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.event.inputs.tag }}'
+          if (-not $tag) { $tag = '${{ github.ref_name }}' }
+          $version = $tag -replace '^v', ''
+          Write-Host "tag $tag, version $version"
+
+          if ($version -notmatch '^\d+\.\d+\.\d+') {
+              throw "The tag '$tag' is not a version. Tags are v<major>.<minor>.<patch>, optionally with a suffix."
+          }
+
+          # The manifest is what the module reports about itself at run time, so
+          # it is the thing that has to be right.
+          $manifest = Import-PowerShellDataFile .\WimForge\WimForge.psd1
+          if ($manifest.ModuleVersion -ne ($version -replace '-.*$', '')) {
+              throw ("The tag says $version but WimForge.psd1 says $($manifest.ModuleVersion). " +
+                     "Bump ModuleVersion and commit it before tagging, or the download reports a version nobody can trace.")
+          }
+
+          # A release with no notes is a release nobody can tell apart from the
+          # one before it.
+          $changelog = Get-Content .\CHANGELOG.md -Raw
+          if ($changelog -notmatch [regex]::Escape("## [$version]")) {
+              throw "CHANGELOG.md has no '## [$version]' section. Write one before tagging."
+          }
+
+          $prerelease = $version.Contains('-')
+          Write-Host "prerelease: $prerelease"
+
+          "version=$version"       >> $env:GITHUB_OUTPUT
+          "tag=$tag"               >> $env:GITHUB_OUTPUT
+          "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
+
+      # ------------------------------------------------------------------ gate
+      #
+      # The same suite the Tests workflow runs, repeated here on purpose. Tests
+      # passing on the commit is not the same as tests passing on the tag, and
+      # the tag is what people download.
+      - name: Test files
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($t in Get-ChildItem tests\Test-*.ps1 | Sort-Object Name) {
+              & $t.FullName
+              if ($LASTEXITCODE -ne 0) { $failed += $t.Name }
+          }
+          if ($failed.Count -gt 0) {
+              throw ("Not releasing. Failed: {0}" -f ($failed -join ', '))
+          }
+          Write-Host "All test files passed."
+
+      - name: Front-end parity
+        shell: pwsh
+        run: .\Test-FrontEndParity.ps1 -AllowParameterDifferences
+
+      # --------------------------------------------------------------- package
+      - name: Build the zip
+        id: package
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $name    = "WimForge-$version"
+
+          # A versioned folder inside the archive, so extracting it anywhere
+          # produces one tidy directory rather than spraying files into whatever
+          # folder the person was standing in.
+          $staging = Join-Path $env:RUNNER_TEMP $name
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+
+          # What ships, named rather than filtered.
+          #
+          # An exclude list is the obvious way round and the wrong one: a file
+          # added to the repository root a year from now would ship in every
+          # release without anyone deciding that it should. So this names what
+          # goes in, names what deliberately stays out, and fails on anything it
+          # has never been told about -- which turns "we forgot" into a build
+          # error instead of a surprise in somebody's download.
+          $include = @(
+              'WimForge',                 # the module
+              'Start-WimForgeGui.ps1',    # the two front-ends
+              'Start-WimForgeMenu.ps1',
+              'WimForge-GUI.cmd',         # and their Explorer launchers
+              'WimForge-Menu.cmd',
+              'Add-DriversToWim.ps1',     # standalone scripts, still supported
+              'Export-ModelDrivers.ps1',
+              'ReferenceBuild',           # building a base image from clean media
+              'docs',
+              'WIM-Build-Runbook.md',     # the README links to it, so it ships
+              'README.md',
+              'CHANGELOG.md',
+              'LICENSE',
+              'AUTHORS.md'
+          )
+
+          # Development only. Someone who wants these clones the repository;
+          # someone who downloads a zip wants to run the thing.
+          $devOnly = @(
+              '.git', '.github', '.gitattributes', '.gitignore',
+              'tests', 'Test-FrontEndParity.ps1'
+          )
+
+          $unknown = @(Get-ChildItem -LiteralPath . -Force |
+                       Where-Object { $include -notcontains $_.Name -and $devOnly -notcontains $_.Name } |
+                       ForEach-Object { $_.Name })
+          if ($unknown.Count -gt 0) {
+              throw ("The release does not know what to do with: {0}. Add each one to " +
+                     "`$include or `$devOnly in this workflow and say which it is." -f ($unknown -join ', '))
+          }
+
+          $missing = @($include | Where-Object { -not (Test-Path -LiteralPath $_) })
+          if ($missing.Count -gt 0) {
+              throw ("Meant to ship but not in the repository: {0}" -f ($missing -join ', '))
+          }
+
+          foreach ($item in $include) {
+              Copy-Item -LiteralPath $item -Destination $staging -Recurse -Force
+          }
+
+          # Belt and braces. The live configuration holds a machine's drive
+          # letters and share paths; .gitignore already keeps it out, and if it
+          # ever gets committed by accident this stops it shipping.
+          Remove-Item -LiteralPath (Join-Path $staging 'WimForge\WimForge.config.json') -Force -ErrorAction SilentlyContinue
+
+          $zip = Join-Path $env:RUNNER_TEMP "$name.zip"
+          Compress-Archive -Path $staging -DestinationPath $zip -CompressionLevel Optimal -Force
+
+          # sha256sum format -- two spaces, lower case, file name only -- so it
+          # verifies with the standard tools on any platform.
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sums = "$zip.sha256"
+          # Written by hand rather than with Set-Content: sha256sum wants a
+          # trailing newline and an LF one, and Set-Content on Windows would give
+          # CRLF -- which sha256sum reads as part of the file name.
+          [System.IO.File]::WriteAllText($sums, "$hash  $name.zip`n")
+
+          Write-Host "$name.zip  $([math]::Round((Get-Item $zip).Length / 1MB, 2)) MB"
+          Write-Host "sha256 $hash"
+
+          "zip=$zip"   >> $env:GITHUB_OUTPUT
+          "sums=$sums" >> $env:GITHUB_OUTPUT
+          "name=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Check the zip actually contains a working copy
+        shell: pwsh
+        run: |
+          # An empty or truncated archive is a thing that happens, and finding
+          # out from a user is the wrong way round. Extracted and run, not
+          # weighed.
+          $check = Join-Path $env:RUNNER_TEMP 'verify'
+          Expand-Archive -LiteralPath '${{ steps.package.outputs.zip }}' -DestinationPath $check -Force
+
+          $inner = Join-Path $check '${{ steps.package.outputs.name }}'
+          foreach ($needed in 'WimForge\WimForge.psd1', 'WimForge\WimForge.psm1',
+                              'Start-WimForgeGui.ps1', 'Start-WimForgeMenu.ps1',
+                              'WimForge-GUI.cmd', 'WimForge-Menu.cmd',
+                              'docs\getting-started.md', 'ReferenceBuild',
+                              'LICENSE', 'README.md', 'CHANGELOG.md') {
+              $p = Join-Path $inner $needed
+              if (-not (Test-Path -LiteralPath $p)) { throw "The archive is missing $needed" }
+          }
+
+          # And that what was meant to stay out actually stayed out. An include
+          # list that silently ships the whole tree would pass every check above.
+          foreach ($unwanted in 'tests', '.github', 'Test-FrontEndParity.ps1', '.git') {
+              if (Test-Path -LiteralPath (Join-Path $inner $unwanted)) {
+                  throw "The archive contains $unwanted, which is development only."
+              }
+          }
+
+          # Every relative link in the packaged documentation has to resolve
+          # INSIDE the archive. Leaving a file out of the release is not only a
+          # missing file: it is a dead link in the README of every copy that gets
+          # downloaded, and the person reading it has no way to tell whether the
+          # document is missing or was never written. This check is here because
+          # the first version of the include list did exactly that to the
+          # runbook.
+          $dead = @()
+          foreach ($doc in (Get-ChildItem -LiteralPath $inner -Filter '*.md' -Recurse -File)) {
+              # Commented-out markup is not a link. The README carries a
+              # placeholder image tag inside an HTML comment.
+              $text = [regex]::Replace((Get-Content -LiteralPath $doc.FullName -Raw), '(?s)<!--.*?-->', '')
+              foreach ($m in [regex]::Matches($text, '\]\(([^)#][^)]*?)(?:#[^)]*)?\)')) {
+                  $target = $m.Groups[1].Value
+                  if ($target -match '^(https?:|mailto:)') { continue }
+                  $resolved = Join-Path $doc.DirectoryName $target
+                  if (-not (Test-Path -LiteralPath $resolved)) {
+                      $dead += ("{0} -> {1}" -f $doc.Name, $target)
+                  }
+              }
+          }
+          if ($dead.Count -gt 0) {
+              throw ("The packaged documentation links to files that are not in the archive: {0}" -f ($dead -join '; '))
+          }
+          Write-Host 'Every relative link in the packaged documentation resolves.'
+
+          $m = Import-PowerShellDataFile (Join-Path $inner 'WimForge\WimForge.psd1')
+          Write-Host ("the packaged manifest exports {0} function(s), version {1}" -f `
+                      $m.FunctionsToExport.Count, $m.ModuleVersion)
+          if ($m.FunctionsToExport.Count -lt 1) { throw 'The packaged manifest exports nothing.' }
+
+          if (Test-Path -LiteralPath (Join-Path $inner 'WimForge\WimForge.config.json')) {
+              throw 'The archive contains a live configuration file. It must not ship.'
+          }
+
+      # ----------------------------------------------------------------- notes
+      - name: Lift the notes out of the CHANGELOG
+        id: notes
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $lines   = Get-Content .\CHANGELOG.md
+          $out     = New-Object System.Collections.Generic.List[string]
+          $inside  = $false
+
+          foreach ($line in $lines) {
+              if ($line -match '^##\s+\[') {
+                  # The next version heading ends this section.
+                  if ($inside) { break }
+                  if ($line -match [regex]::Escape("[$version]")) { $inside = $true; continue }
+              }
+              # And so does the block of link-reference definitions at the foot
+              # of the file. The last section has no heading after it, so without
+              # this the notes end with two raw markdown link definitions.
+              if ($inside -and $line -match '^\[[^\]]+\]:\s*http') { break }
+              if ($inside) { $out.Add($line) }
+          }
+
+          $body = ($out -join "`n").Trim()
+          if (-not $body) { throw "Could not read the notes for $version out of CHANGELOG.md." }
+
+          $body += "`n`n---`n`nThis archive is the toolkit as you would run it. " +
+                   "The test suite, the parity check and the design runbook are in the " +
+                   "repository rather than in the download.`n`nVerify the download:`n`n" +
+                   '```powershell' + "`n" +
+                   "Get-FileHash .\${{ steps.package.outputs.name }}.zip -Algorithm SHA256`n" +
+                   '```' + "`n`nThe expected value is in " +
+                   "``${{ steps.package.outputs.name }}.zip.sha256`` beside it."
+
+          Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'notes.md') -Value $body -Encoding utf8
+          Write-Host $body
+
+      # --------------------------------------------------------------- publish
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Not $args. That is an automatic variable, and assigning to it is
+          # the kind of thing that works until it does not.
+          $ghArgs = @(
+              'release', 'create', '${{ steps.version.outputs.tag }}',
+              '${{ steps.package.outputs.zip }}',
+              '${{ steps.package.outputs.sums }}',
+              '--title', 'WimForge ${{ steps.version.outputs.version }}',
+              '--notes-file', (Join-Path $env:RUNNER_TEMP 'notes.md')
+          )
+          if ('${{ steps.version.outputs.prerelease }}' -eq 'True') { $ghArgs += '--prerelease' }
+
+          & gh @ghArgs
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed with exit $LASTEXITCODE" }

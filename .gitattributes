@@ -1,0 +1,50 @@
+# WimForge -- line endings.
+#
+# This matters for one file type in particular. The two Explorer launchers are
+# batch, and batch is parsed line by line by cmd.exe: a .cmd checked out with
+# bare LF endings can mis-parse a label or a parenthesised block, which shows up
+# as a launcher that does nothing rather than as an error. Anyone cloning this on
+# a machine with core.autocrlf=input would get exactly that, so the endings are
+# pinned here instead of trusted to whoever clones it.
+#
+# Setting this BEFORE the first commit costs nothing. Adding it to a repository
+# with history renormalises every file and shows up as one enormous diff, so if
+# this ever needs changing, change it in its own commit.
+
+# Let git decide for anything not named below, storing LF in the repository.
+* text=auto
+
+# Checked out with CRLF: everything Windows runs directly.
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+*.psd1 text eol=crlf
+*.psm1 text eol=crlf
+*.xml  text eol=crlf
+*.reg  text eol=crlf
+
+# Markdown, JSON and the licence are read by tools that do not care, so they
+# follow the platform.
+*.md   text
+
+# YAML is whitespace-significant and GitHub Actions reads it on Linux runners,
+# so it is pinned to LF regardless of what the working copy is checked out with.
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text
+
+# Never touched, never diffed. Most of these are ignored anyway; named here so
+# that one forced in with -f cannot be mangled on the way through.
+*.wim  binary
+*.esd  binary
+*.swm  binary
+*.iso  binary
+*.msu  binary
+*.cab  binary
+*.ppkg binary
+*.sys  binary
+*.cat  binary
+*.dll  binary
+*.pfx  binary
+*.sdi  binary
+Registry.pol binary

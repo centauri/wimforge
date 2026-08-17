@@ -1,0 +1,72 @@
+name: Bug report
+description: Something did not work. Include the image and the ADK, because both decide the answer.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things answer most questions before anything else: **which image**
+        and **which DISM**. Housekeeping → Environment check prints both.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: The relevant part of the log
+      description: >
+        From the Logs folder, or the log pane. A DISM hex code is worth including
+        verbatim -- WimForge translates the common ones and the translation is
+        often more useful than the code.
+      render: text
+
+  - type: input
+    id: image
+    attributes:
+      label: The image
+      description: Release, build and edition -- what the toolkit reports when it opens it.
+      placeholder: Windows 10 IoT Enterprise LTSC 2021, 19044.5011, x64
+    validations:
+      required: true
+
+  - type: input
+    id: adk
+    attributes:
+      label: DISM / ADK
+      description: >
+        Which DISM is on PATH and its version, from the environment check. The
+        rule that catches people is that DISM must be at least as new as the
+        image it mounts.
+      placeholder: ADK 10.1.26100.2454, from the Deployment and Imaging Tools Environment
+
+  - type: input
+    id: host
+    attributes:
+      label: The machine doing the work
+      placeholder: Windows 11 24H2, PowerShell 5.1, 32GB RAM
+
+  - type: dropdown
+    id: frontend
+    attributes:
+      label: Where from
+      options:
+        - The GUI
+        - The console menu
+        - A script calling the module
+        - A scheduled task
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I was running elevated.
+        - label: Housekeeping → Environment check is clean, or I have said which part is not.

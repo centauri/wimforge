@@ -1,0 +1,124 @@
+# WimForge -- what never belongs in the repository.
+#
+# Two things drive this list, and neither is obvious from a clean checkout:
+#
+#   1. Setup can now put the workspace NEXT TO THE TOOLKIT. That is offered with
+#      a warning when the toolkit is in a working tree, but somebody will
+#      eventually take it -- and then images, an expanded driver library and a
+#      live unattend.xml are all sitting inside the repository. Everything the
+#      workspace generates is ignored by name, whether or not it exists here yet.
+#
+#   2. Several of the files this toolkit handles carry credentials. An
+#      unattend.xml holds a local administrator password; a provisioning package
+#      can hold a domain-join account and Wi-Fi keys; a .pfx holds a private key.
+#      Those come first, because a large binary committed by accident is an
+#      annoyance and a password committed by accident is an incident.
+
+# ---------------------------------------------------------------- credentials
+
+# An unattend.xml contains <AdministratorPassword> and usually the domain join.
+# The one under ReferenceBuild is the documented TEMPLATE -- placeholder where
+# the password goes -- and belongs in the repo, so it is let back in explicitly.
+# Any other unattend.xml is a live one.
+#
+# Matched loosely on purpose. 'unattend.xml' alone would let through
+# 'live-unattend.xml', 'unattend-pos.xml' and every other name somebody reaches
+# for when they keep a second copy -- and a second copy is exactly the one with
+# the real password in it.
+*unattend*.xml
+!ReferenceBuild/unattend.xml
+
+# Provisioning packages. The ones in \Recovery\Customizations are re-applied
+# after a reset, and a package that joins a domain or configures Wi-Fi carries
+# the credentials to do it.
+*.ppkg
+
+# Private keys and certificate stores.
+*.pfx
+*.p12
+*.pem
+*.key
+
+# The live configuration is per-machine: local drive letters, share paths, VM and
+# host names. Created on first run and kept in %ProgramData%; only the example
+# belongs in the repo, and it is named differently so it survives this.
+WimForge.config.json
+config.json
+
+# ---------------------------------------------------------- images and payload
+
+# Multi-GB binaries have no business in git. Version the manifests that describe
+# them instead -- the build history records what went into each one.
+*.wim
+*.esd
+*.swm
+*.vhd
+*.vhdx
+*.iso
+*.msu
+*.cab
+*.working.wim
+
+# Part of the recovery payload, and not covered by anything above.
+boot.sdi
+
+# Harvested driver packages. Export-WfModelDriver pulls whole DriverStore
+# packages off a reference machine; there is no hand-written binary in this
+# repository, so anything matching these is harvested output.
+*.sys
+*.cat
+*.dll
+*.inf
+*.din
+
+# A compiled local policy blob: binary, machine-specific, and replaced wholesale
+# rather than merged.
+Registry.pol
+
+# ------------------------------------------------------------- workspace trees
+#
+# Only created here if somebody points the workspace at the toolkit folder. Named
+# anyway, because the moment to have ignored them is before that happens.
+
+Workspace/
+Imaging/
+Images/
+Drivers/
+Updates/
+Payload/
+Export/
+Logs/
+Recovery/
+
+# Mount points and scratch. A mounted image inside a working tree makes every git
+# status enumerate a full Windows installation -- Test-WfMountPath warns about
+# exactly this.
+Mount/
+Mounts/
+Scratch/
+WimMount/
+WimScratch/
+*-Pe/
+
+# --------------------------------------------------------------------- output
+
+build-history.json
+*.log
+
+# Superseded work moved aside rather than deleted: the remote session cannot
+# remove files on a connected folder, so it lands here to be deleted by hand.
+_to_delete/
+
+# --------------------------------------------------------- editor and OS noise
+
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.swp
+*.orig
+*.rej
+Thumbs.db
+desktop.ini
+.DS_Store

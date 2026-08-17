@@ -1,0 +1,45 @@
+name: Feature request
+description: Something that should exist, or something that exists and is wrong.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What you are trying to do and where it currently stops. The problem is
+        more useful than the solution -- there is often a better answer than the
+        one either of us thought of first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you had in mind
+      description: Optional. A rough shape is fine.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - Servicing and updates
+        - Driver library
+        - WinPE boot images
+        - Languages and region
+        - Lockdown, recovery, first boot
+        - Reference image or reference VM
+        - Publishing, media, validation
+        - The GUI
+        - The console menu
+        - Something else
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        Anything added to one front-end has to be added to the other --
+        `Test-FrontEndParity.ps1` fails the build otherwise. Worth knowing if you
+        are thinking of sending a pull request.

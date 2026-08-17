@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    WimForge reference build answer file
+    Windows 10 IoT Enterprise LTSC 2021 (build 19044), amd64
+
+    Used at seal time:
+        sysprep /generalize /oobe /shutdown /unattend:unattend.xml
+
+    It is deliberately model-agnostic. Everything in here has to be true of every
+    hardware model the image covers, because there is only one image.
+
+    English UI, Dutch regional settings, no product key, no domain join.
+    Naming and joining are left to the provisioning script that runs from
+    SetupComplete.cmd - which also avoids putting credentials in a file that
+    ships inside every machine.
+
+    Validate it before use:  Test-WfUnattend -Path .\unattend.xml
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ===================================================================
+       generalize
+       Runs when sysprep /generalize is executed on the reference VM.
+       =================================================================== -->
+  <settings pass="generalize">
+    <component name="Microsoft-Windows-Security-SPP"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <!--
+          SkipRearm=1 preserves the activation rearm count across generalize.
+
+          KEEP THIS while you are iterating on the reference VM: you will seal it
+          more than once, and each generalize without it burns a rearm.
+
+          REMOVE IT (or set 0) for the final build you actually ship, so the
+          deployed terminal starts with a clean licensing state.
+
+          Test-WfUnattend flags this as a warning, on purpose - it is a reminder,
+          not a mistake.
+      -->
+      <SkipRearm>1</SkipRearm>
+    </component>
+  </settings>
+
+  <!-- ===================================================================
+       specialize
+       Runs on the DEPLOYED terminal at first boot, per machine.
+       =================================================================== -->
+  <settings pass="specialize">
+
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <!--
+          * means "generate a random name". It is deliberately NOT a fixed name:
+          a hard-coded ComputerName in a shared image deploys every machine with
+          the same name, which is how duplicate objects and broken domain trust
+          happen. The provisioning script renames it properly afterwards.
+      -->
+      <ComputerName>*</ComputerName>
+
+      <!--
+          Carries the customised built-in Administrator profile to every new user
+          profile. Only useful if you actually customised it in audit mode; harmless
+          if you did not.
+      -->
+      <CopyProfile>true</CopyProfile>
+
+      <TimeZone>W. Europe Standard Time</TimeZone>
+
+      <RegisteredOrganization>YOUR ORGANISATION</RegisteredOrganization>
+      <RegisteredOwner>YOUR ORGANISATION</RegisteredOwner>
+
+      <!-- No ProductKey. Activation is handled as a separate provisioning step
+           until the licensing model is settled. If a MAK is added later it must
+           be the IoT Enterprise LTSC key - the wrong SKU surfaces as 0xC004F069. -->
+    </component>
+
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <!--
+          English UI, Dutch regional.
+
+          InputLocale 0409:00000409 is US locale with the US keyboard layout,
+          which matches the physical keyboards. For a Dutch layout use
+          0413:00000413; for US-International use 0409:00020409.
+
+          SystemLocale nl-NL is the one that matters for older POS software:
+          it sets the ANSI codepage used by non-Unicode applications.
+      -->
+      <InputLocale>0409:00000409</InputLocale>
+      <SystemLocale>nl-NL</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UILanguageFallback>en-US</UILanguageFallback>
+      <UserLocale>nl-NL</UserLocale>
+    </component>
+
+  </settings>
+
+  <!-- ===================================================================
+       oobeSystem
+       Runs at the end of first boot, before anyone logs on.
+       =================================================================== -->
+  <settings pass="oobeSystem">
+
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <InputLocale>0409:00000409</InputLocale>
+      <SystemLocale>nl-NL</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UILanguageFallback>en-US</UILanguageFallback>
+      <UserLocale>nl-NL</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+
+      <UserAccounts>
+        <!--
+            Enables the built-in Administrator and skips OOBE's account creation
+            screen. Without an account here OOBE stops and waits for a human.
+
+            Setting PlainText=false does not protect anything - Windows only
+            base64-encodes the value, and anyone holding the WIM can decode it in
+            a line of PowerShell. There is no secure way to put a password in an
+            answer file, so treat this as a throwaway: put a random value here and
+            have SetupComplete.cmd rotate it at first boot with your existing
+            local-administrator password tooling. Never reuse a real password.
+        -->
+        <AdministratorPassword>
+          <Value>REPLACE-ME-THEN-ROTATE-AT-FIRST-BOOT</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <!-- 3 = do not install updates automatically during OOBE. The image
+             carries the cumulative update you injected offline; letting OOBE
+             pull its own makes two terminals imaged a week apart different. -->
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+
+      <!--
+          No AutoLogon and no FirstLogonCommands on purpose.
+
+          Provisioning belongs in C:\Windows\Setup\Scripts\SetupComplete.cmd,
+          which runs as SYSTEM after setup finishes and before anyone logs on.
+          Put it in the toolkit's payload tree at
+              <PayloadRoot>\Windows\Setup\Scripts\SetupComplete.cmd
+          and it gets copied into the image by Copy-WfPayload.
+
+          That is where the hostname rename, domain join and admin password
+          rotation should run - not from an answer file that ships in the WIM.
+      -->
+
+    </component>
+  </settings>
+
+</unattend>
