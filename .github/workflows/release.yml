@@ -93,22 +93,13 @@ jobs:
       # The same suite the Tests workflow runs, repeated here on purpose. Tests
       # passing on the commit is not the same as tests passing on the tag, and
       # the tag is what people download.
-      - name: Test files
+      # One script rather than a second copy of the loop, so this gate cannot
+      # drift from the one in the Tests workflow. It runs every test file, the
+      # front-end parity check and the manifest load, and exits non-zero on any
+      # of them, which stops the release here.
+      - name: Test files, parity and manifest
         shell: pwsh
-        run: |
-          $failed = @()
-          foreach ($t in Get-ChildItem tests\Test-*.ps1 | Sort-Object Name) {
-              & $t.FullName
-              if ($LASTEXITCODE -ne 0) { $failed += $t.Name }
-          }
-          if ($failed.Count -gt 0) {
-              throw ("Not releasing. Failed: {0}" -f ($failed -join ', '))
-          }
-          Write-Host "All test files passed."
-
-      - name: Front-end parity
-        shell: pwsh
-        run: .\Test-FrontEndParity.ps1 -AllowParameterDifferences
+        run: .\tests\Invoke-CiSuite.ps1
 
       # --------------------------------------------------------------- package
       - name: Build the zip

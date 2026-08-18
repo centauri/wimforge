@@ -1,7 +1,7 @@
 # WimForge -- https://github.com/centauri/wimforge
 # Copyright (c) 2026 Paul Admiraal. Released under the MIT licence; see LICENSE.
 #
-# Every test file, plus the front-end parity check.
+# Every test file, plus the front-end parity check and the manifest load.
 #
 # Windows because the toolkit is a Windows toolkit, but note what this does NOT
 # prove: no test here mounts an image, calls DISM, touches the registry or
@@ -13,7 +13,14 @@
 # Both shells are run. Windows PowerShell 5.1 is what the module actually targets
 # and what the launchers start; pwsh 7 is what most contributors have to hand. A
 # test that passes in one and fails in the other is worth knowing about, so
-# neither is allowed to hide the other.
+# neither is allowed to hide the other, and neither cancels the other.
+#
+# Two jobs rather than one matrix, deliberately. A step's `shell:` key is one of
+# the few workflow keys that accepts no expression, so `shell: ${{ matrix.shell }}`
+# does not fail at run time -- GitHub refuses the whole file with "Unrecognized
+# named-value: 'matrix'" and no job starts at all. The suite therefore lives in
+# tests/Invoke-CiSuite.ps1, which both jobs call with a literal shell name, and
+# which is also the one command to run the suite locally.
 
 name: Tests
 
@@ -27,50 +34,20 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: ${{ matrix.shell }}
+  windows-powershell:
+    name: Windows PowerShell 5.1
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shell: [ powershell, pwsh ]
-
     steps:
       - uses: actions/checkout@v4
+      - name: Run the suite
+        shell: powershell
+        run: .\tests\Invoke-CiSuite.ps1
 
-      - name: Show the shell being used
-        shell: ${{ matrix.shell }}
-        run: $PSVersionTable | Format-List
-
-      - name: Test files
-        shell: ${{ matrix.shell }}
-        run: |
-          $failed = @()
-          foreach ($t in Get-ChildItem tests\Test-*.ps1 | Sort-Object Name) {
-              Write-Host ""
-              Write-Host "=== $($t.Name) ===" -ForegroundColor Cyan
-              & $t.FullName
-              # A test file reports by exit code. Collected rather than thrown on,
-              # so one failure does not hide the other forty.
-              if ($LASTEXITCODE -ne 0) { $failed += $t.Name }
-          }
-          Write-Host ""
-          if ($failed.Count -gt 0) {
-              Write-Host ("FAILED: {0}" -f ($failed -join ', ')) -ForegroundColor Red
-              exit 1
-          }
-          Write-Host "All test files passed." -ForegroundColor Green
-
-      - name: Front-end parity
-        shell: ${{ matrix.shell }}
-        run: |
-          # Parameter differences are reported but do not fail the build: one
-          # front-end legitimately prompts for a value the other defaults.
-          .\Test-FrontEndParity.ps1 -AllowParameterDifferences
-
-      - name: Manifest is loadable and its exports exist
-        shell: ${{ matrix.shell }}
-        run: |
-          $m = Import-PowerShellDataFile .\WimForge\WimForge.psd1
-          Write-Host ("manifest exports {0} function(s)" -f $m.FunctionsToExport.Count)
-          if ($m.FunctionsToExport.Count -lt 1) { throw 'The manifest exports nothing.' }
+  pwsh:
+    name: PowerShell 7
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the suite
+        shell: pwsh
+        run: .\tests\Invoke-CiSuite.ps1

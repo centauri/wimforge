@@ -90,8 +90,16 @@ It resolves splatted hashtables rather than giving up on them, so a call built a
 
 `tests\` holds unit tests for the parts that can be tested without an image:
 build-to-release mapping, architecture decoding, the catalog fallback logic, and
-`Get-WfImageUpdateTarget` against a stubbed DISM. Run them with
-`.\tests\Test-*.ps1`; each exits non-zero on failure.
+`Get-WfImageUpdateTarget` against a stubbed DISM. Each file exits non-zero on
+failure and can be run on its own, but the whole suite plus the parity check and
+the manifest load is one command:
+
+```powershell
+.\tests\Invoke-CiSuite.ps1
+```
+
+That is exactly what CI runs, once in Windows PowerShell 5.1 and once in
+PowerShell 7, so a green run here is a green run there.
 
 `Test-GuiLayout.ps1` checks hand-built panels arithmetically: the panel must set
 its width before any child is added, and no child may extend past it. WinForms
@@ -141,7 +149,7 @@ runs only on a version tag, and publishes a downloadable archive.
 ```powershell
 # 1. Bump the version in the manifest and write the CHANGELOG section.
 #    Test-Docs.ps1 checks the two agree, so run the suite before tagging.
-Get-ChildItem tests\Test-*.ps1 | ForEach-Object { & $_.FullName }
+.\tests\Invoke-CiSuite.ps1
 
 # 2. Commit, tag, push.
 git commit -am "Release 1.1.0"
