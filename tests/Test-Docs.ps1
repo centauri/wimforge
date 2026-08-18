@@ -92,7 +92,7 @@ foreach ($m in [regex]::Matches($menuText, "Label\s*=\s*'((?:[^']|'')*)'")) {
 Write-Host 'Functions the documentation names' -ForegroundColor Cyan
 
 foreach ($doc in $docs) {
-    $text = Get-Content -LiteralPath (Join-Path $root $doc) -Raw
+    $text = Get-Content -LiteralPath (Join-Path $root $doc) -Raw -Encoding UTF8
 
     $named = @([regex]::Matches($text, '\b((?:Get|Set|New|Add|Remove|Test|Invoke|Export|Import|Mount|Dismount|Repair|Publish|Save|Copy|Start|Stop|Restore|Initialize|Enable|Disable|Write|Read|Compare|Select|Find|Format|Register|ConvertFrom|ConvertTo)-Wf\w+)') |
               ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
@@ -105,7 +105,7 @@ foreach ($doc in $docs) {
 Write-Host 'Parameters shown in the examples' -ForegroundColor Cyan
 
 foreach ($doc in $docs) {
-    $text  = Get-Content -LiteralPath (Join-Path $root $doc)
+    $text  = Get-Content -LiteralPath (Join-Path $root $doc) -Encoding UTF8
     $bad   = @()
     $fn    = $null
 
@@ -138,7 +138,7 @@ foreach ($doc in $docs) {
 Write-Host 'Buttons and menu items the documentation points at' -ForegroundColor Cyan
 
 foreach ($doc in $docs) {
-    $text = Get-Content -LiteralPath (Join-Path $root $doc) -Raw
+    $text = Get-Content -LiteralPath (Join-Path $root $doc) -Raw -Encoding UTF8
 
     # Fenced code is examples, and a comment inside one -- '# Servicing tab ->
     # Run servicing, or:' -- is not a reference to check. Stripped first.
@@ -162,9 +162,12 @@ foreach ($doc in $docs) {
     # near the right margin wraps and 'Repair\nstale mounts' is one name.
     $emphasised = @(
         # -> **Run servicing**
-        '(?:->|→|(?<=\s)>)\s*\*{1,2}([A-Z][^*]{2,40}?)\*{1,2}'
+        # \u2192, not a literal arrow: this file is UTF-8 without a BOM, and
+        # Windows PowerShell 5.1 then misreads those UTF-8 bytes as a curly
+        # quote, which ends the string and the whole file fails to parse.
+        '(?:->|\u2192|(?<=\s)>)\s*\*{1,2}([A-Z][^*]{2,40}?)\*{1,2}'
         # **Housekeeping -> Repair stale mounts**
-        '\*{1,2}[^*]{0,80}?(?:->|→|>)\s*([A-Z][^*]{2,40}?)\*{1,2}'
+        '\*{1,2}[^*]{0,80}?(?:->|\u2192|>)\s*([A-Z][^*]{2,40}?)\*{1,2}'
     )
     foreach ($pattern in $emphasised) {
         foreach ($m in [regex]::Matches($text, $pattern)) {
@@ -176,7 +179,7 @@ foreach ($doc in $docs) {
     # the way -- otherwise a wrapped reference is read a second time as the half
     # of itself that happens to end at the line break.
     $plain = [regex]::Replace($text, '\*{1,2}[^*]{0,120}?\*{1,2}', ' ')
-    foreach ($m in [regex]::Matches($plain, '(?:->|→|(?<=\s)>)\s*([A-Z][^*\n\r|,.;]{2,40}?)\s*(?=\||\r|\n|,|\.|;|$)')) {
+    foreach ($m in [regex]::Matches($plain, '(?:->|\u2192|(?<=\s)>)\s*([A-Z][^*\n\r|,.;]{2,40}?)\s*(?=\||\r|\n|,|\.|;|$)')) {
         $named.Add($m.Groups[1].Value.Trim())
     }
 
@@ -219,12 +222,12 @@ Housekeeping -> **Nonexistent button**
 $fixture = Get-Content -LiteralPath $tmp -Raw
 $found = New-Object System.Collections.Generic.List[string]
 foreach ($pattern in @(
-    '(?:->|→|(?<=\s)>)\s*\*{1,2}([A-Z][^*]{2,40}?)\*{1,2}',
-    '\*{1,2}[^*]{0,80}?(?:->|→|>)\s*([A-Z][^*]{2,40}?)\*{1,2}')) {
+    '(?:->|\u2192|(?<=\s)>)\s*\*{1,2}([A-Z][^*]{2,40}?)\*{1,2}',
+    '\*{1,2}[^*]{0,80}?(?:->|\u2192|>)\s*([A-Z][^*]{2,40}?)\*{1,2}')) {
     foreach ($m in [regex]::Matches($fixture, $pattern)) { $found.Add(($m.Groups[1].Value -replace '\s+',' ').Trim()) }
 }
 $plain = [regex]::Replace($fixture, '\*{1,2}[^*]{0,120}?\*{1,2}', ' ')
-foreach ($m in [regex]::Matches($plain, '(?:->|→|(?<=\s)>)\s*([A-Z][^*\n\r|,.;]{2,40}?)\s*(?=\||\r|\n|,|\.|;|$)')) {
+foreach ($m in [regex]::Matches($plain, '(?:->|\u2192|(?<=\s)>)\s*([A-Z][^*\n\r|,.;]{2,40}?)\s*(?=\||\r|\n|,|\.|;|$)')) {
     $found.Add($m.Groups[1].Value.Trim())
 }
 Test-Case 'all three reference forms are found' `
@@ -248,7 +251,7 @@ Write-Host 'Release readiness' -ForegroundColor Cyan
 # to find out: by then the tag exists and has to be deleted and re-pushed. So the
 # same agreement is checked here, where it costs a second.
 $manifestVersion = (Import-PowerShellDataFile (Join-Path $root 'WimForge\WimForge.psd1')).ModuleVersion
-$changelogText   = Get-Content -LiteralPath (Join-Path $root 'CHANGELOG.md') -Raw
+$changelogText   = Get-Content -LiteralPath (Join-Path $root 'CHANGELOG.md') -Raw -Encoding UTF8
 
 Test-Case 'the CHANGELOG has a section for the manifest version' $true `
     ($changelogText -match [regex]::Escape("## [$manifestVersion]"))
@@ -264,7 +267,7 @@ Test-Case 'every released version has its link definition' '' ($noLink -join ', 
 
 # The workflow builds WimForge-<version>.zip from the manifest version. If the
 # name in the documentation drifts from that, a link in somebody's runbook 404s.
-$readme = Get-Content -LiteralPath (Join-Path $root 'README.md') -Raw
+$readme = Get-Content -LiteralPath (Join-Path $root 'README.md') -Raw -Encoding UTF8
 if ($readme -match 'WimForge-(\d+\.\d+\.\d+)\.zip') {
     Test-Case 'the archive name in the README matches the manifest' $manifestVersion $Matches[1]
 }

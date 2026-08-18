@@ -926,7 +926,13 @@ function Add-WfUpdate {
     }
     else {
         $UpdatePath = Assert-WfPath -Path $UpdatePath -Label 'Update path'
-        $pkgs = @(Get-ChildItem -LiteralPath $UpdatePath -Include '*.msu','*.cab' -File -Recurse |
+        # Where-Object, not -Include. Get-ChildItem -Include only filters when the
+        # path itself has a wildcard, so '*.msu','*.cab' was ignored and every
+        # file in the folder -- including wimforge-set.json -- was treated as a
+        # package. The checkpoint-set tests then saw two "checkpoint" rows and
+        # three files applied from a folder that held two updates.
+        $pkgs = @(Get-ChildItem -LiteralPath $UpdatePath -File -Recurse |
+                    Where-Object { @('.msu', '.cab') -contains $_.Extension } |
                     Sort-Object { ConvertTo-WfNaturalKey $_.Name })
     }
 

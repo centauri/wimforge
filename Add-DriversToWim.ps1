@@ -249,7 +249,8 @@ try {
     # --------------------------------------------------------------- updates ---
     if ($UpdatePath) {
         Write-Step 'Applying updates'
-        $pkgs = Get-ChildItem -LiteralPath $UpdatePath -Include '*.msu','*.cab' -File -Recurse |
+        $pkgs = Get-ChildItem -LiteralPath $UpdatePath -File -Recurse |
+                Where-Object { @('.msu', '.cab') -contains $_.Extension } |
                 Sort-Object Name
         if (-not $pkgs) { Write-Host '    No .msu/.cab found -- skipping.' -ForegroundColor Yellow }
         foreach ($p in $pkgs) {

@@ -1669,7 +1669,9 @@ function Get-WfUpdateFolder {
         return @()
     }
 
-    $files = @(Get-ChildItem -LiteralPath $Path -Include '*.msu','*.cab' -File -Recurse | Sort-Object Name)
+    $files = @(Get-ChildItem -LiteralPath $Path -File -Recurse |
+               Where-Object { @('.msu', '.cab') -contains $_.Extension } |
+               Sort-Object Name)
 
     if ($files.Count -eq 0) {
         # An empty grid with no message reads as "the tool did not work". It is

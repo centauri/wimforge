@@ -149,7 +149,11 @@ Test-Case 'a clean path never reads FAIL' $true ($clean.Verdict -ne 'FAIL')
 
 if ($haveVolumes) {
     Test-Case 'a clean path reads OK'  'OK'   $clean.Verdict
-    Test-Case 'one warning reads WARN' 'WARN' (Test-WfMountPath -Path 'D:\Imaging\Mount' -WorkspaceRoot 'D:\Imaging').Verdict
+    # Same volume as $clean. D:\Imaging\Mount used to be the fixture, but the
+    # overall verdict is FAIL when that drive does not exist -- which is the
+    # usual case on a CI runner -- even though the workspace finding is only a
+    # warning. The thing under test is WARN beating OK, not a missing volume.
+    Test-Case 'one warning reads WARN' 'WARN' (Test-WfMountPath -Path 'C:\WimMount\Inside' -WorkspaceRoot 'C:\WimMount').Verdict
 }
 else {
     Write-Host '  --   no volume information on this host, so the exact verdicts are untested' -ForegroundColor DarkGray
