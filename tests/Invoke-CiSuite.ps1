@@ -106,7 +106,9 @@ try {
     # -------------------------------------------------------------- verdict
     Write-Host ''
     if ($failed.Count -gt 0) {
-        Write-Host ("FAILED ({0}): {1}" -f $failed.Count, ($failed.ToArray() -join ', ')) -ForegroundColor Red
+        $summary = "FAILED ({0}): {1}" -f $failed.Count, ($failed.ToArray() -join ', ')
+        Write-Host $summary -ForegroundColor Red
+        if ($env:GITHUB_ACTIONS) { Write-Host "::error::$summary" }
         exit 1
     }
 
