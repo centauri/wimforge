@@ -22,7 +22,11 @@ function Test-Case {
     param([string] $Name, $Expected, $Actual)
     $e = ($Expected -join ', '); $a = ($Actual -join ', ')
     if ($e -eq $a) { Write-Host "  ok   $Name" -ForegroundColor DarkGray }
-    else { Write-Host "  FAIL $Name`n       expected [$e]`n       got      [$a]" -ForegroundColor Red; $script:Fail++ }
+    else {
+        Write-Host "  FAIL $Name`n       expected [$e]`n       got      [$a]" -ForegroundColor Red
+        if ($env:GITHUB_ACTIONS) { Write-Host "::error::Test-MountPath: $Name -- expected [$e] got [$a]" }
+        $script:Fail++
+    }
 }
 
 # The real one, not a Join-Path wrapper: Join-Path resolves the drive through
@@ -145,8 +149,15 @@ Write-Host 'The verdict is the worst of the findings' -ForegroundColor Cyan
 # exact verdicts can only be asserted where the query works. The ordering can be
 # asserted anywhere, and it is the part that would actually break.
 $clean = Test-WfMountPath -Path 'C:\WimMount' -WorkspaceRoot 'D:\Imaging'
+if ($env:GITHUB_ACTIONS) {
+    foreach ($f in @($clean.Findings)) {
+        Write-Host ("::notice::{0}={1} {2}" -f $f.Check, $f.Status, $f.Detail)
+    }
+}
 $haveVolumes = ((Get-Finding $clean 'Volume').Status -eq 'OK')
 $spaceOk     = ((Get-Finding $clean 'Free space').Status -eq 'OK')
+$fsStatus    = (Get-Finding $clean 'File system').Status
+$fsOk        = ($fsStatus -eq 'OK') -or [string]::IsNullOrEmpty($fsStatus)
 
 Test-Case 'a UNC path still fails outright' 'FAIL' `
     (Test-WfMountPath -Path '\\server\share\Mount' -WorkspaceRoot 'D:\Imaging').Verdict
@@ -158,7 +169,7 @@ $hostFail = @($clean.Findings | Where-Object {
 })
 Test-Case 'a clean path never reads FAIL' $true ($hostFail.Count -eq 0)
 
-if ($haveVolumes -and $spaceOk) {
+if ($haveVolumes -and $spaceOk -and $fsOk) {
     Test-Case 'a clean path reads OK'  'OK'   $clean.Verdict
     # Same volume as $clean. D:\Imaging\Mount used to be the fixture, but the
     # overall verdict is FAIL when that drive does not exist -- which is the
@@ -167,7 +178,7 @@ if ($haveVolumes -and $spaceOk) {
     Test-Case 'one warning reads WARN' 'WARN' (Test-WfMountPath -Path 'C:\WimMount\Inside' -WorkspaceRoot 'C:\WimMount').Verdict
 }
 elseif ($haveVolumes) {
-    Write-Host '  --   free space on this host is not OK, so the exact OK/WARN verdicts are untested' -ForegroundColor DarkGray
+    Write-Host '  --   free space or file system on this host is not OK, so the exact OK/WARN verdicts are untested' -ForegroundColor DarkGray
 }
 else {
     Write-Host '  --   no volume information on this host, so the exact verdicts are untested' -ForegroundColor DarkGray
