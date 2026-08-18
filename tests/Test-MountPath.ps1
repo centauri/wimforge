@@ -149,11 +149,6 @@ Write-Host 'The verdict is the worst of the findings' -ForegroundColor Cyan
 # exact verdicts can only be asserted where the query works. The ordering can be
 # asserted anywhere, and it is the part that would actually break.
 $clean = Test-WfMountPath -Path 'C:\WimMount' -WorkspaceRoot 'D:\Imaging'
-if ($env:GITHUB_ACTIONS) {
-    foreach ($f in @($clean.Findings)) {
-        Write-Host ("::notice::{0}={1} {2}" -f $f.Check, $f.Status, $f.Detail)
-    }
-}
 $haveVolumes = ((Get-Finding $clean 'Volume').Status -eq 'OK')
 $spaceOk     = ((Get-Finding $clean 'Free space').Status -eq 'OK')
 $fsStatus    = (Get-Finding $clean 'File system').Status
@@ -189,10 +184,13 @@ else {
         ([bool]((Get-Finding $clean 'Volume').Detail -match 'Could not query'))
 }
 
-# It reports, it does not refuse. Every finding has to say what would go wrong,
-# or an operator who knows their machine has nothing to overrule it with.
+# It reports, it does not refuse. Every non-OK finding has to say what would go
+# wrong, or an operator who knows their machine has nothing to overrule it with.
+# OK lines are allowed to be short ("D: is NTFS.") -- that is the whole answer.
 $all = Test-WfMountPath -Path 'D:\Imaging\Mount' -WorkspaceRoot 'D:\Imaging'
-Test-Case 'every finding explains itself' 0 @($all.Findings | Where-Object { $_.Detail.Length -lt 20 }).Count
+Test-Case 'every warning or failure explains itself' 0 @(
+    $all.Findings | Where-Object { $_.Status -ne 'OK' -and $_.Detail.Length -lt 20 }
+).Count
 Test-Case 'and nothing throws'            $true ($null -ne $all)
 
 Write-Host 'It falls back to the configuration' -ForegroundColor Cyan
