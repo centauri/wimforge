@@ -51,22 +51,44 @@ try {
 
     Write-Host ("Running {0} test file(s)." -f $tests.Count) -ForegroundColor Cyan
 
+    # Each file is a new process. The tests call `exit 1` on failure, and in
+    # both Windows PowerShell 5.1 and pwsh that ends the current runspace --
+    # which, if they were invoked with &, would be this suite. A runner would
+    # then report only "exit code 1" and never name the file.
+    $hostExe = Join-Path $PSHOME $(
+        if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
+    )
+
+    function Invoke-WfTestFile {
+        param([Parameter(Mandatory)] [string] $Path, [string[]] $ArgumentList)
+        $global:LASTEXITCODE = 0
+        $prevNative = $null
+        if ($PSVersionTable.PSEdition -eq 'Core') {
+            $prevNative = $PSNativeCommandUseErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $false
+        }
+        try {
+            # Out-Host: the child's stdout is otherwise the function's success
+            # output, and `if (Invoke-WfTestFile)` is then true for any printed
+            # line -- which marked every passing file as failed.
+            if ($ArgumentList) { & $hostExe -NoProfile -File $Path @ArgumentList | Out-Host }
+            else               { & $hostExe -NoProfile -File $Path | Out-Host }
+            return [bool]($LASTEXITCODE -ne 0)
+        }
+        finally {
+            if ($PSVersionTable.PSEdition -eq 'Core') {
+                $PSNativeCommandUseErrorActionPreference = $prevNative
+            }
+        }
+    }
+
     foreach ($t in $tests) {
         Write-Host ''
         Write-Host ("=== {0} ===" -f $t.Name) -ForegroundColor Cyan
-
-        # Reset before each run. $LASTEXITCODE is sticky: a test file that passes
-        # without calling exit leaves the previous file's code in place, so one
-        # real failure would otherwise name every quiet test that followed it.
-        $global:LASTEXITCODE = 0
-
         try {
-            & $t.FullName
-            if ($LASTEXITCODE -ne 0) { $failed.Add($t.Name) }
+            if (Invoke-WfTestFile -Path $t.FullName) { $failed.Add($t.Name) }
         }
         catch {
-            # A test that throws rather than exiting is still a failure, and the
-            # remaining files are still worth running.
             Write-Host ("  FAIL {0} threw: {1}" -f $t.Name, $_.Exception.Message) -ForegroundColor Red
             $failed.Add($t.Name)
         }
@@ -78,10 +100,11 @@ try {
 
     # Parameter differences are reported but do not fail the build: one front-end
     # legitimately prompts for a value the other defaults.
-    $global:LASTEXITCODE = 0
     try {
-        & (Join-Path $root 'Test-FrontEndParity.ps1') -AllowParameterDifferences
-        if ($LASTEXITCODE -ne 0) { $failed.Add('Test-FrontEndParity.ps1') }
+        if (Invoke-WfTestFile -Path (Join-Path $root 'Test-FrontEndParity.ps1') `
+                              -ArgumentList '-AllowParameterDifferences') {
+            $failed.Add('Test-FrontEndParity.ps1')
+        }
     }
     catch {
         Write-Host ("  FAIL parity threw: {0}" -f $_.Exception.Message) -ForegroundColor Red
@@ -109,6 +132,7 @@ try {
         $summary = "FAILED ({0}): {1}" -f $failed.Count, ($failed.ToArray() -join ', ')
         Write-Host $summary -ForegroundColor Red
         if ($env:GITHUB_ACTIONS) { Write-Host "::error::$summary" }
+        if ($env:GITHUB_STEP_SUMMARY) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $summary }
         exit 1
     }
 

@@ -50,7 +50,13 @@ $tmp = Join-Path ([IO.Path]::GetTempPath()) ('wf-git-' + [guid]::NewGuid().ToStr
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 
 try {
-    & git -C $tmp init -q 2>&1 | Out-Null
+    # git init writes hints to stderr on a runner whose global gitconfig has no
+    # default branch. That is not a failure; ErrorActionPreference Stop would
+    # make it one.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & git -C $tmp -c init.defaultBranch=main init -q 2>&1 | Out-Null }
+    finally { $ErrorActionPreference = $prevEap }
     Copy-Item -LiteralPath (Join-Path $root '.gitignore')    -Destination $tmp -Force
     Copy-Item -LiteralPath (Join-Path $root '.gitattributes') -Destination $tmp -Force
 

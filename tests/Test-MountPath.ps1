@@ -29,9 +29,13 @@ function Test-Case {
 # the provider, so 'C:\WimMount' throws on any host without a C: drive -- which
 # is exactly the reason the module has its own.
 . (Join-Path $root 'WimForge\Private\Core.ps1')
-function Get-WfConfig { @{ MountPath = 'C:\WimMount'; WorkspaceRoot = 'D:\Imaging' } }
-
 . (Join-Path $root 'WimForge\Public\Configuration.ps1')
+
+# After the module file, not before. Configuration.ps1 defines Get-WfConfig; a
+# stub written first is overwritten, and the real one then writes a default
+# config on a machine that has never run the toolkit -- which is every CI
+# runner. Test-UpdateFlow.ps1 documents the same trap.
+function Get-WfConfig { @{ MountPath = 'C:\WimMount'; WorkspaceRoot = 'D:\Imaging' } }
 
 function Get-Finding {
     param($Result, [string] $Check)
@@ -147,10 +151,12 @@ $spaceOk     = ((Get-Finding $clean 'Free space').Status -eq 'OK')
 Test-Case 'a UNC path still fails outright' 'FAIL' `
     (Test-WfMountPath -Path '\\server\share\Mount' -WorkspaceRoot 'D:\Imaging').Verdict
 
-# Host disk space is not the product. GitHub-hosted Windows runners often have
-# a small C: and would otherwise fail every "clean path" assertion.
-$nonSpaceFail = @($clean.Findings | Where-Object { $_.Check -ne 'Free space' -and $_.Status -eq 'FAIL' })
-Test-Case 'a clean path never reads FAIL' $true ($nonSpaceFail.Count -eq 0)
+# Host disk space and the volume's file system are not the product. GitHub-hosted
+# Windows runners often have a small C:, and the image disk is not always NTFS.
+$hostFail = @($clean.Findings | Where-Object {
+    $_.Check -notin @('Free space', 'File system') -and $_.Status -eq 'FAIL'
+})
+Test-Case 'a clean path never reads FAIL' $true ($hostFail.Count -eq 0)
 
 if ($haveVolumes -and $spaceOk) {
     Test-Case 'a clean path reads OK'  'OK'   $clean.Verdict
