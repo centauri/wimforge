@@ -22,6 +22,14 @@
 
 $ErrorActionPreference = 'Continue'
 
+# PowerShell 7 can turn a native command's non-zero exit into a terminating
+# error when this is true. The tests were written for Windows PowerShell 5.1,
+# where git check-ignore returning 1 just sets $LASTEXITCODE. Leave that
+# behaviour in place so the suite does not abort on the pwsh job.
+if ($PSVersionTable.PSEdition -eq 'Core') {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 
 # The tests locate everything from $PSScriptRoot, but Test-FrontEndParity.ps1 and

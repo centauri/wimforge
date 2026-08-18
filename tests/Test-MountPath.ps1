@@ -142,18 +142,26 @@ Write-Host 'The verdict is the worst of the findings' -ForegroundColor Cyan
 # asserted anywhere, and it is the part that would actually break.
 $clean = Test-WfMountPath -Path 'C:\WimMount' -WorkspaceRoot 'D:\Imaging'
 $haveVolumes = ((Get-Finding $clean 'Volume').Status -eq 'OK')
+$spaceOk     = ((Get-Finding $clean 'Free space').Status -eq 'OK')
 
 Test-Case 'a UNC path still fails outright' 'FAIL' `
     (Test-WfMountPath -Path '\\server\share\Mount' -WorkspaceRoot 'D:\Imaging').Verdict
-Test-Case 'a clean path never reads FAIL' $true ($clean.Verdict -ne 'FAIL')
 
-if ($haveVolumes) {
+# Host disk space is not the product. GitHub-hosted Windows runners often have
+# a small C: and would otherwise fail every "clean path" assertion.
+$nonSpaceFail = @($clean.Findings | Where-Object { $_.Check -ne 'Free space' -and $_.Status -eq 'FAIL' })
+Test-Case 'a clean path never reads FAIL' $true ($nonSpaceFail.Count -eq 0)
+
+if ($haveVolumes -and $spaceOk) {
     Test-Case 'a clean path reads OK'  'OK'   $clean.Verdict
     # Same volume as $clean. D:\Imaging\Mount used to be the fixture, but the
     # overall verdict is FAIL when that drive does not exist -- which is the
     # usual case on a CI runner -- even though the workspace finding is only a
     # warning. The thing under test is WARN beating OK, not a missing volume.
     Test-Case 'one warning reads WARN' 'WARN' (Test-WfMountPath -Path 'C:\WimMount\Inside' -WorkspaceRoot 'C:\WimMount').Verdict
+}
+elseif ($haveVolumes) {
+    Write-Host '  --   free space on this host is not OK, so the exact OK/WARN verdicts are untested' -ForegroundColor DarkGray
 }
 else {
     Write-Host '  --   no volume information on this host, so the exact verdicts are untested' -ForegroundColor DarkGray

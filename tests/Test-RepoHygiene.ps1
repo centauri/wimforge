@@ -59,8 +59,16 @@ try {
         $full = Join-Path $tmp $Relative
         New-Item -ItemType Directory -Path (Split-Path $full -Parent) -Force | Out-Null
         Set-Content -LiteralPath $full -Value 'x' -Force
-        & git -C $tmp check-ignore -q -- $Relative 2>&1 | Out-Null
-        return ($LASTEXITCODE -eq 0)
+        # Exit 1 means "not ignored". That is the answer, not a failure, so do
+        # not let ErrorActionPreference Stop (or pwsh native-command errors)
+        # turn it into a throw.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & git -C $tmp check-ignore -q -- $Relative 2>&1 | Out-Null
+            return ($LASTEXITCODE -eq 0)
+        }
+        finally { $ErrorActionPreference = $prevEap }
     }
 
     # --- must reach the repository ---------------------------------------
