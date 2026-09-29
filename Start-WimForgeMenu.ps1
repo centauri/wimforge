@@ -3494,7 +3494,8 @@ function Show-ReferenceVmMenu {
                 foreach ($c in $vm.Checkpoints) { Write-Host "      * $c" -ForegroundColor DarkGray }
             }
             if (-not $vm.GuestServices) {
-                Write-Host '      Guest Service Interface is off -- file copy into the VM will fail' -ForegroundColor Yellow
+                Write-Host '      Guest Service Interface is off -- file copy into the VM will fail. To enable, elevated on the host:' -ForegroundColor Yellow
+                Write-Host ("        Enable-VMIntegrationService -VMName '{0}' -Name 'Guest Service Interface'" -f $vm.Name) -ForegroundColor Yellow
             }
         }
         elseif ($vm) {

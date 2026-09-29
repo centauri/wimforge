@@ -656,6 +656,15 @@ function Copy-WfToReferenceVm {
     if (-not $Name) { $Name = $cfg['ReferenceVmName'] }
     $SourcePath = Assert-WfPath -Path $SourcePath -Label 'Source file'
 
+    # Copy-VMFile's own error for this is "Failed to initiate copying files to
+    # the guest", which names neither the cause nor the fix. Say both.
+    $vm = Get-WfReferenceVm -Name $Name
+    if ($vm.Exists -and -not $vm.GuestServices) {
+        $fix = "Enable-VMIntegrationService -VMName '$Name' -Name 'Guest Service Interface'"
+        if (Test-WfVmHostIsRemote) { $fix += " -ComputerName '$((Get-WfConfig)['HyperVHost'])'" }
+        throw "The Guest Service Interface is off on $Name, so files cannot be copied into it. Enable it on the Hyper-V host (elevated), no restart needed:  $fix"
+    }
+
     # For a remote host the file has to reach the host first; Copy-VMFile reads
     # from the host's filesystem, not this workstation's.
     if (Test-WfVmHostIsRemote) {

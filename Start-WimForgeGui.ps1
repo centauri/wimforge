@@ -202,6 +202,14 @@ function Start-WfJob {
     $rs.SessionStateProxy.SetVariable('WfArgs',       $Arguments)
     $rs.SessionStateProxy.SetVariable('WfConfigPath', $ConfigPath)
 
+    # The guest and host credentials live in the module's script scope, and the
+    # child imports the module fresh -- so without this, Set-WfGuestCredential on
+    # the UI thread is forgotten by the very next job, and Run in guest reports
+    # "No guest credentials set" straight after they were set.
+    $wfMod = Get-Module WimForge
+    $rs.SessionStateProxy.SetVariable('WfGuestCred', (& $wfMod { $script:WfGuestCredential }))
+    $rs.SessionStateProxy.SetVariable('WfHostCred',  (& $wfMod { $script:WfHostCredential }))
+
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
@@ -211,6 +219,14 @@ function Start-WfJob {
 
             if ($WfConfigPath) { Get-WfConfig -Path $WfConfigPath | Out-Null }
             else                { Get-WfConfig | Out-Null }
+
+            # Set directly rather than through Set-Wf*Credential, which would log
+            # "stored" at the top of every job.
+            & (Get-Module WimForge) {
+                param($Guest, $HostCred)
+                $script:WfGuestCredential = $Guest
+                $script:WfHostCredential  = $HostCred
+            } $WfGuestCred $WfHostCred
 
             # Built here so it is bound to THIS runspace's session state.
             Register-WfLogSink -Sink ([scriptblock]::Create(
@@ -3930,7 +3946,18 @@ function Update-WfVmStatus {
         if (-not $vm.GuestServices) {
             $vmStatus.Text += '   [Guest Service Interface off -- file copy into the VM will fail]'
             $vmStatus.ForeColor = [System.Drawing.Color]::DarkGoldenrod
+
+            # The label says what is wrong; the log says how to fix it. Once per
+            # VM, not on every refresh.
+            if ($script:GsiHintFor -ne $vm.Name) {
+                $fix = "Enable-VMIntegrationService -VMName '$($vm.Name)' -Name 'Guest Service Interface'"
+                if (Test-WfVmHostIsRemote) { $fix += " -ComputerName '$($script:Config['HyperVHost'])'" }
+                Write-WfGuiLog "Guest Service Interface is off on $($vm.Name). Copy a file into the VM needs it; Run in guest does not. To enable it, run this elevated on the Hyper-V host:" ([System.Drawing.Color]::Khaki)
+                Write-WfGuiLog "    $fix" ([System.Drawing.Color]::Khaki)
+                $script:GsiHintFor = $vm.Name
+            }
         }
+        else { $script:GsiHintFor = $null }
     }
     catch {
         $vmStatus.Text = "Cannot reach the Hyper-V host: $($_.Exception.Message)"
